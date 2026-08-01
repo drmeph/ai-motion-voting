@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Amplify generated artifacts (recreated by `ampx sandbox` / pipeline-deploy)
+amplify_outputs.json
+.amplify/
+
+.DS_Store
+*.log
