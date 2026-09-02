@@ -3,7 +3,11 @@ backend:
   phases:
     build:
       commands:
-        - npm ci
+        # npm install, not npm ci: the AWS CDK tree pulled in by
+        # @aws-amplify/backend-cli hits an npm peer-dependency bug where a
+        # valid lockfile is rejected ("Missing: @opentelemetry/core from lock
+        # file"). npm install resolves the same tree without the strict check.
+        - npm install
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
