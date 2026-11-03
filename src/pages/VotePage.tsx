@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Logo from '../components/Logo';
+import TimerDisplay from '../components/TimerDisplay';
+import { AI_MOTION_PAGE_URL } from '../config';
 import { getClient, type Participant } from '../lib/client';
+import { useTimer } from '../lib/timer';
 import { HEARTBEAT_MS, useLiveVoting } from '../lib/useLiveVoting';
 
 const PARTICIPANT_KEY = 'pitch-vote-participant-id';
@@ -20,6 +24,7 @@ function getParticipantId(): string {
  */
 export default function VotePage() {
   const { session, sessionLoaded, stats } = useLiveVoting();
+  const timer = useTimer(session);
   const [me, setMe] = useState<Participant | null>(null);
   const [pending, setPending] = useState<'up' | 'down' | null>(null);
   const meRef = useRef<Participant | null>(null);
@@ -104,9 +109,12 @@ export default function VotePage() {
   return (
     <div className="vote-page">
       <header className="vote-header">
-        <span className="live-dot" aria-hidden />
-        <span className="muted">
-          {stats.activeCount} {stats.activeCount === 1 ? 'person' : 'people'} in the room
+        <Logo className="logo-sm" />
+        <span className="vote-presence">
+          <span className="live-dot" aria-hidden />
+          <span className="muted">
+            {stats.activeCount} {stats.activeCount === 1 ? 'person' : 'people'} in the room
+          </span>
         </span>
       </header>
 
@@ -124,6 +132,8 @@ export default function VotePage() {
             <p className="project-name">Waiting for the next pitcher…</p>
           </>
         )}
+
+        <TimerDisplay timer={timer} className="timer-vote" />
 
         <p className="vote-question">Should they continue?</p>
 
@@ -154,6 +164,12 @@ export default function VotePage() {
               : 'Voting opens when a pitcher is on stage.'}
         </p>
       </main>
+
+      <footer className="vote-footer">
+        <a href={AI_MOTION_PAGE_URL} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-block">
+          Visit AI Motion on Lead Bounty ↗
+        </a>
+      </footer>
     </div>
   );
 }

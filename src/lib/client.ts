@@ -3,6 +3,7 @@ import type { Schema } from '../../amplify/data/resource';
 
 export type Session = Schema['Session']['type'];
 export type Participant = Schema['Participant']['type'];
+export type Presenter = Schema['Presenter']['type'];
 
 /** Fixed id of the single event session record. */
 export const SESSION_ID = 'main';

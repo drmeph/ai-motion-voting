@@ -22,9 +22,9 @@ completely afterwards.
 
 | Route       | Who         | What                                                                   |
 | ----------- | ----------- | ---------------------------------------------------------------------- |
-| `/#/`       | Audience    | Current pitcher + two big vote buttons. Votes can be changed any time. |
-| `/#/admin`  | Organizer   | Set/update pitcher, live stats, reset votes, join QR code.             |
-| `/#/display`| Projector   | Huge live percentage, progress bar with 50 % marker, connected count, join QR. |
+| `/#/`       | Audience    | Current pitcher, stage timer, two big vote buttons, link to the AI Motion page on Lead Bounty. |
+| `/#/admin`  | Organizer   | Presenter queue (CSV import, reorder, next / random pick), stage timer controls, manual pitcher override, live stats, join QR. |
+| `/#/display`| Projector   | AI Motion logo, pitcher, big stage timer, live percentage with 50 % marker, connected count, join QR. |
 
 (Hash routing is used on purpose — no rewrite rules needed on the static host.)
 
@@ -86,10 +86,44 @@ one branch build — there is no separate backend deployment step.
 
 ### Event-day flow
 
-1. Audience scans the QR → lands on the vote page, is counted immediately.
-2. Admin types the pitcher's name + project → **Set pitcher & reset votes**.
-3. Audience votes; display updates live; ≥ 50 % green = continue.
-4. Next pitcher → repeat step 2 (the round bump clears all votes).
+1. Before the event, on `/#/admin` → **Upload CSV** with the presenters
+   (see format below). Drag rows or use ↑/↓ to set the running order, or
+   **Shuffle remaining**.
+2. Audience scans the QR → lands on the vote page, is counted immediately.
+3. **Next in order** (or **Pick random**, or a row's **On stage**) puts a
+   presenter on stage: votes reset and the timer is reset (paused) to the last
+   length used. The presenter is marked *Done* in the list.
+4. **Start 2:00** / **Start 3:00** starts the stage timer; **Pause / Resume**
+   and **Reset** (back to the last length) as needed. The timer shows on the
+   display and on audience phones.
+5. Audience votes; display updates live; ≥ 50 % green = continue.
+
+The *Current pitcher* card still lets you type a name manually.
+
+### Presenter CSV
+
+One presenter per row. A header row is optional:
+
+```csv
+Full Name,Project Name,Company
+Jane Doe,RoboBarista,Acme
+"Smith, Bob",PitchPal,Globex
+```
+
+- With a header, columns are matched by name (`name`/`presenter`, `project`);
+  any other column is the third field. Without one, columns are read in order:
+  name, project, third field.
+- The third field is shown on the admin page only (not on the projector).
+- Comma- or semicolon-separated (Excel exports both); quoted fields are fine.
+- Uploading replaces the current list (you are asked to confirm).
+
+### Branding
+
+- **Logo:** replace `public/ai-motion-logo.svg` with the real logo (a
+  placeholder is committed). To use a PNG, change `LOGO_SRC` in `src/config.ts`.
+- **Lead Bounty link** on the mobile page: `AI_MOTION_PAGE_URL` in
+  `src/config.ts`, or set the `VITE_AI_MOTION_PAGE_URL` env var in Amplify.
+- **Timer presets:** `TIMER_PRESETS_MIN` in `src/config.ts`.
 
 ## Tear down after the event
 
@@ -112,5 +146,8 @@ leftover resources. Cost after deletion: $0.
   to be deleted well before that.
 - Presence is heartbeat-based (20 s beat / 60 s window), so someone closing
   their browser drops out of the count within a minute.
+- The timer counts down to an end timestamp written by the admin's device, so
+  each screen relies on its own clock being correct (normally true — phones and
+  laptops sync time automatically).
 - Costs during the event are effectively pennies: DynamoDB on-demand +
   AppSync per-request/subscription pricing, no idle servers.

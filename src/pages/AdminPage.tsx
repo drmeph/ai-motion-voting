@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { getClient, SESSION_ID } from '../lib/client';
+import Logo from '../components/Logo';
+import PresenterQueue from '../components/PresenterQueue';
+import TimerControls from '../components/TimerControls';
+import { getClient, SESSION_ID, type Presenter } from '../lib/client';
+import { readTimer, timerPatch } from '../lib/timer';
 import { useLiveVoting } from '../lib/useLiveVoting';
 
 /**
- * Event admin panel: set/update the current pitcher, watch live participation
- * and vote percentages, reset votes between pitchers, and share the join QR.
+ * Event admin panel: presenter queue (CSV import, ordering, random pick),
+ * stage timer, manual pitcher override, live stats and the join QR.
  */
 export default function AdminPage() {
   const { session, sessionLoaded, stats } = useLiveVoting();
@@ -45,6 +49,7 @@ export default function AdminPage() {
         pitcherName: pitcherName.trim(),
         projectName: projectName.trim(),
         round: resetVotes ? session.round + 1 : session.round,
+        ...(resetVotes ? { currentPresenterId: null, ...timerPatch.reset(readTimer(session, Date.now())) } : {}),
       });
       setNotice(resetVotes ? 'Pitcher set — votes reset.' : 'Pitcher updated.');
     } catch (err) {
@@ -53,6 +58,23 @@ export default function AdminPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Put a queued presenter on stage: new round, timer reset, marked as presented. */
+  async function putOnStage(p: Presenter) {
+    if (!session) return;
+    const client = getClient();
+    await client.models.Session.update({
+      id: session.id,
+      pitcherName: p.name,
+      projectName: p.projectName ?? '',
+      currentPresenterId: p.id,
+      round: session.round + 1,
+      ...timerPatch.reset(readTimer(session, Date.now())),
+    });
+    setPitcherName(p.name);
+    setProjectName(p.projectName ?? '');
+    await client.models.Presenter.update({ id: p.id, presentedAt: Date.now() });
   }
 
   async function resetVotes() {
@@ -81,15 +103,23 @@ export default function AdminPage() {
   return (
     <div className="admin-page">
       <header className="admin-header">
-        <h1>Event Admin</h1>
+        <div className="admin-title">
+          <Logo className="logo-sm" />
+          <h1>Event Admin</h1>
+        </div>
         <Link to="/display" className="btn btn-ghost" target="_blank">
           Open display screen ↗
         </Link>
       </header>
 
       <div className="admin-grid">
+        {session && <PresenterQueue session={session} onStage={putOnStage} />}
+
+        {session && <TimerControls session={session} />}
+
         <section className="card">
           <h2>Current pitcher</h2>
+          <p className="muted small">Manual override — or use the presenter list above.</p>
           <label className="field">
             <span>Pitcher name</span>
             <input

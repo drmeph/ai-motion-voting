@@ -1,9 +1,13 @@
 import { QRCodeSVG } from 'qrcode.react';
+import Logo from '../components/Logo';
+import TimerDisplay from '../components/TimerDisplay';
+import { useTimer } from '../lib/timer';
 import { useLiveVoting } from '../lib/useLiveVoting';
 
 /** Big-screen projector view. Everything updates live via AppSync subscriptions. */
 export default function DisplayPage() {
   const { session, sessionLoaded, stats } = useLiveVoting();
+  const timer = useTimer(session);
   const joinUrl = `${window.location.origin}${window.location.pathname}#/`;
 
   if (!sessionLoaded) {
@@ -20,7 +24,8 @@ export default function DisplayPage() {
   return (
     <div className="display-page">
       <header className="display-header">
-        <div>
+        <div className="display-left">
+          <Logo className="logo-display" />
           {hasPitcher ? (
             <>
               <h1 className="display-pitcher">{session!.pitcherName}</h1>
@@ -37,6 +42,7 @@ export default function DisplayPage() {
       </header>
 
       <main className="display-main">
+        <TimerDisplay timer={timer} className="timer-display" />
         <div className={`display-percent ${pct === null ? '' : stats.passing ? 'good' : 'bad'}`}>
           {pct === null ? '—' : `${pct}%`}
         </div>
