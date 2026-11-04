@@ -33,8 +33,6 @@ export interface Presenter {
   id: string;
   name: string;
   projectName: string;
-  /** Optional third CSV column; admin-only. */
-  extra: string;
   /** Epoch ms when put on stage; null = not yet. */
   presentedAt: number | null;
 }
@@ -52,7 +50,6 @@ export interface VoteStats {
 export interface PresenterInput {
   name: string;
   projectName: string;
-  extra: string;
 }
 
 /** Every operation a client can request, with its arguments. */

@@ -47,13 +47,12 @@ export function parseCsv(text: string): string[][] {
 export interface PresenterRow {
   name: string;
   projectName: string;
-  extra: string;
 }
 
 /**
  * Turn CSV text into presenter rows. Accepts a header row (columns matched by
- * name: "name"/"presenter", "project", anything else = the third column) or
- * no header (columns taken in order: name, project, third).
+ * name: "name"/"presenter", "project") or no header (columns taken in order:
+ * name, project). Extra columns are ignored.
  */
 export function parsePresenterCsv(text: string): PresenterRow[] {
   const rows = parseCsv(text);
@@ -64,12 +63,11 @@ export function parsePresenterCsv(text: string): PresenterRow[] {
   const nameIdx = header.findIndex((h, i) => i !== projectIdx && (h.includes('name') || h.includes('presenter')));
   const hasHeader = projectIdx !== -1 || nameIdx !== -1;
 
-  let cols = { name: 0, project: 1, extra: 2 };
+  let cols = { name: 0, project: 1 };
   if (hasHeader) {
     const name = nameIdx === -1 ? 0 : nameIdx;
     const project = projectIdx === -1 ? (name === 0 ? 1 : 0) : projectIdx;
-    const extra = header.findIndex((_, i) => i !== name && i !== project);
-    cols = { name, project, extra };
+    cols = { name, project };
   }
 
   return rows
@@ -77,7 +75,6 @@ export function parsePresenterCsv(text: string): PresenterRow[] {
     .map((r) => ({
       name: r[cols.name] ?? '',
       projectName: r[cols.project] ?? '',
-      extra: cols.extra === -1 ? '' : (r[cols.extra] ?? ''),
     }))
     .filter((r) => r.name !== '');
 }

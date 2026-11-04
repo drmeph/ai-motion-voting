@@ -218,7 +218,6 @@ export class EventRoom extends DurableObject<Env> {
             id: crypto.randomUUID(),
             name: String(r.name).trim().slice(0, 200),
             projectName: String(r.projectName ?? '').trim().slice(0, 200),
-            extra: String(r.extra ?? '').trim().slice(0, 500),
             presentedAt: null,
           }));
         s.currentPresenterId = null;

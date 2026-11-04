@@ -124,15 +124,14 @@ The *Current pitcher* card still lets you type a name manually.
 One presenter per row. A header row is optional:
 
 ```csv
-Full Name,Project Name,Company
-Jane Doe,RoboBarista,Acme
-"Smith, Bob",PitchPal,Globex
+Full Name,Project Name
+Jane Doe,RoboBarista
+"Smith, Bob",PitchPal
 ```
 
-- With a header, columns are matched by name (`name`/`presenter`, `project`);
-  any other column is the third field. Without one, columns are read in order:
-  name, project, third field.
-- The third field is shown on the admin page only (not on the projector).
+- With a header, columns are matched by name (`name`/`presenter`, `project`).
+  Without one, columns are read in order: name, project. Any other columns
+  are ignored.
 - Comma- or semicolon-separated (Excel exports both); quoted fields are fine.
 - Uploading replaces the current list (you are asked to confirm).
 
@@ -140,8 +139,8 @@ Jane Doe,RoboBarista,Acme
 
 - **Logo:** replace `public/ai-motion-logo.svg` with the real logo (a
   placeholder is committed). To use a PNG, change `LOGO_SRC` in `src/config.ts`.
-- **Lead Bounty link** on the mobile page: `AI_MOTION_PAGE_URL` in
-  `src/config.ts`, or set the `VITE_AI_MOTION_PAGE_URL` build variable (it is baked in at build time).
+- **Lead Bounty link** on the mobile page: https://leadbounty.io/ai-motion
+  (`AI_MOTION_PAGE_URL` in `src/config.ts`).
 - **Timer presets:** `TIMER_PRESETS_MIN` in `src/config.ts`.
 
 ## Tear down after the event
