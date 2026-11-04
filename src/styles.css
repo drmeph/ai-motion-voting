@@ -346,8 +346,8 @@ pre {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding: 2.5rem 3rem;
-  gap: 1rem;
+  padding: 1.75rem 3rem;
+  gap: 0.75rem;
 }
 
 .display-header {
@@ -397,7 +397,7 @@ pre {
 }
 
 .display-percent {
-  font-size: clamp(6rem, 22vw, 15rem);
+  font-size: clamp(4.5rem, min(22vw, 24vh), 15rem);
   font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -502,12 +502,24 @@ pre {
 }
 
 .logo-sm {
-  height: 1.9rem;
+  height: 3rem;
 }
 
 .logo-display {
-  height: clamp(2.5rem, 5vw, 4rem);
-  margin-bottom: 1rem;
+  height: clamp(4.5rem, min(11vw, 15vh), 10rem);
+  flex-shrink: 0;
+}
+
+.display-left {
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 2.5vw, 2.5rem);
+  min-width: 0;
+}
+
+.logo-vote {
+  height: 6.5rem;
+  margin: 0 auto 1.5rem;
 }
 
 .admin-title {
@@ -579,7 +591,7 @@ pre {
 }
 
 .timer-display .timer-digits {
-  font-size: clamp(3.5rem, 10vw, 8rem);
+  font-size: clamp(3rem, min(10vw, 12vh), 8rem);
 }
 
 .timer-display .timer-bar {
@@ -613,7 +625,7 @@ pre {
 /* ---------- vote page additions ---------- */
 
 .vote-header {
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 
 .vote-presence {
@@ -747,4 +759,28 @@ pre {
 .live-dot.off {
   background: var(--muted);
   box-shadow: none;
+}
+
+/* Keep the projector view on one screen at 720p/768p. */
+.display-join svg {
+  width: clamp(96px, 16vh, 140px);
+  height: auto;
+}
+
+@media (max-height: 820px) {
+  .display-main {
+    gap: 0.6rem;
+  }
+
+  .display-caption {
+    font-size: clamp(1.1rem, 3.5vh, 2.2rem);
+  }
+
+  .display-page .progress-track {
+    height: 1.6rem;
+  }
+
+  .display-stats .stat-value {
+    font-size: clamp(1.8rem, 5.5vh, 3.4rem);
+  }
 }

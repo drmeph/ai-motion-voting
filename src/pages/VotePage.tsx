@@ -38,7 +38,6 @@ export default function VotePage() {
   return (
     <div className="vote-page">
       <header className="vote-header">
-        <Logo className="logo-sm" />
         <span className="vote-presence">
           <span className={`live-dot ${connected ? "" : "off"}`} aria-hidden />
           <span className="muted">
@@ -50,6 +49,7 @@ export default function VotePage() {
       </header>
 
       <main className="vote-main">
+        <Logo className="logo-vote" />
         {hasPitcher ? (
           <>
             <p className="eyebrow">Now pitching</p>

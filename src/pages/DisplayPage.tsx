@@ -26,14 +26,16 @@ export default function DisplayPage() {
       <header className="display-header">
         <div className="display-left">
           <Logo className="logo-display" />
-          {hasPitcher ? (
-            <>
-              <h1 className="display-pitcher">{session!.pitcherName}</h1>
-              {session?.projectName && <p className="display-project">{session.projectName}</p>}
-            </>
-          ) : (
-            <h1 className="display-pitcher muted">Waiting for the next pitcher…</h1>
-          )}
+          <div>
+            {hasPitcher ? (
+              <>
+                <h1 className="display-pitcher">{session!.pitcherName}</h1>
+                {session?.projectName && <p className="display-project">{session.projectName}</p>}
+              </>
+            ) : (
+              <h1 className="display-pitcher muted">Waiting for the next pitcher…</h1>
+            )}
+          </div>
         </div>
         <div className="display-join">
           <QRCodeSVG value={joinUrl} size={140} bgColor="#ffffff" fgColor="#0b0f17" marginSize={2} />
