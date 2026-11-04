@@ -5,18 +5,27 @@ QR code, votes 👍 Continue / 👎 Stop on their phone, and a projector screen 
 the live percentage. If **≥ 50 % of the people currently in the session** vote
 thumbs up, the pitcher continues.
 
-Built to be **temporary**: spin the whole stack up before the event, delete it
-completely afterwards.
+Built to be **temporary**: one command to deploy before the event, one command
+to delete everything afterwards. Runs entirely on **Cloudflare**.
 
 ## Stack
 
-| Layer     | Tech                                                              |
-| --------- | ----------------------------------------------------------------- |
-| Frontend  | React + Vite (TypeScript), dark mobile-first UI                   |
-| Hosting   | AWS Amplify Hosting                                               |
-| Real-time | AWS AppSync (GraphQL subscriptions via Amplify Gen 2 `defineData`)|
-| Database  | DynamoDB (on-demand, created by Amplify)                          |
-| Auth      | Public API key — no accounts for the audience                     |
+| Layer     | Tech                                                                  |
+| --------- | --------------------------------------------------------------------- |
+| Frontend  | React + Vite (TypeScript), dark mobile-first UI                       |
+| Hosting   | Cloudflare Workers static assets                                      |
+| Real-time | WebSockets to a Cloudflare Durable Object (hibernation API)           |
+| Storage   | The Durable Object's built-in storage                                 |
+| Auth      | None — no accounts for the audience                                   |
+
+Everything is one Worker (`ai-motion-voting`), configured in `wrangler.jsonc`:
+
+```
+browser ──HTTP──▶ Worker ──▶ static files from dist/
+        ──WS /api/ws──▶ Worker ──▶ EventRoom Durable Object ("main")
+                                     • session, timer, presenters, votes
+                                     • pushes state to every open socket
+```
 
 ## Screens
 
@@ -26,63 +35,73 @@ completely afterwards.
 | `/#/admin`  | Organizer   | Presenter queue (CSV import, reorder, next / random pick), stage timer controls, manual pitcher override, live stats, join QR. |
 | `/#/display`| Projector   | AI Motion logo, pitcher, big stage timer, live percentage with 50 % marker, connected count, join QR. |
 
-(Hash routing is used on purpose — no rewrite rules needed on the static host.)
+(Hash routing is used on purpose — no rewrite rules needed.)
 
 ## How it works
 
-- **One session per event.** A single `Session` record (`id: "main"`) holds the
-  current pitcher and a `round` counter.
-- **Presence.** Each audience device registers a `Participant` record
-  (UUID stored in `localStorage`, so one device = one vote) and heartbeats
-  `lastSeenAt` every 20 s. Anyone seen in the last 60 s counts as "in the session".
-- **Voting.** A vote writes `vote` + `votedRound` onto the participant's record.
-  Only votes matching the session's current `round` count.
-- **Reset votes.** The admin bumps `round` by one — a single write, no need to
-  touch participant records. Everyone's UI clears instantly.
-- **Real-time.** All screens use AppSync subscriptions (`observeQuery`) on
-  `Session` and `Participant`, so votes, pitcher changes, and resets propagate
-  to every phone and the projector instantly.
-- **The math.** `percentage = 👍 votes from active participants / active participants`.
+- **One room per event.** A single Durable Object (`EventRoom`, named `main`)
+  holds all state: current pitcher, a `round` counter, the stage timer, the
+  presenter queue and every device's vote. It is persisted in the object's
+  storage, so it survives restarts and redeploys.
+- **Real-time.** Every screen keeps one WebSocket open to the room
+  (`/api/ws?role=audience|display|admin`). Any change is pushed to all
+  sockets immediately; vote bursts are coalesced into one update per 150 ms.
+- **Presence.** An open audience socket *is* presence — no database writes.
+  Phones send a `ping` every 20 s (answered by Cloudflare without waking the
+  object); a socket silent for 60 s stops counting, and a 15 s check
+  updates the count when that happens. Each device has a UUID in
+  `localStorage`, so one device = one vote, even across reloads or tabs.
+- **Voting.** A vote is stored with the round it was cast in. Only votes for
+  the current round count. Phones reconnect automatically (and immediately
+  when brought back to the foreground).
+- **Reset votes.** The admin bumps `round` — everyone's vote clears instantly.
+- **Timer.** The server stores when the timer ends, in its own clock, and sends
+  its time with every update, so all screens show the same countdown even if a
+  device's clock is off.
+- **The math.** `percentage = 👍 votes from connected devices / connected devices`.
   Not voting counts against the pitcher, per the ≥ 50 %-of-the-room rule.
+- **Code layout.** `worker/` = Worker + Durable Object, `src/` = React app,
+  `shared/protocol.ts` = the message types both sides use.
 
 ## Local development
 
-Prereqs: Node 18+, an AWS account, AWS credentials configured locally
-([Amplify guide](https://docs.amplify.aws/react/start/account-setup/)).
-
 ```bash
 npm install
-
-# Terminal 1 — deploy a personal cloud sandbox (AppSync + DynamoDB),
-# writes amplify_outputs.json when ready and watches for changes:
-npx ampx sandbox
-
-# Terminal 2 — frontend dev server:
-npm run dev
+npm run dev        # builds the app, runs the Worker + Durable Object locally
+                   # → http://localhost:8787
 ```
 
-Open `http://localhost:5173/#/admin`, set a pitcher, then open `/#/` and
-`/#/display` in other tabs/devices.
+For hot reload while working on the UI, keep `npm run dev` running and in a
+second terminal run `npm run dev:ui` (Vite on http://localhost:5173, which
+proxies `/api` to the local Worker).
 
-The app builds without a backend too — it shows a "Backend not configured"
-screen until `amplify_outputs.json` exists.
+Local state lives in `.wrangler/`; delete that folder to start fresh.
 
-## Deploy for the event (Amplify Hosting)
+## Deploy for the event
 
-1. Push this repo to GitHub.
-2. AWS Console → **Amplify** → **Create new app** → connect the GitHub repo and
-   pick your branch. Amplify detects `amplify.yml` and this as a Gen 2 fullstack
-   app.
-3. Accept the defaults (Amplify creates/uses a service role that lets the build
-   deploy the AppSync + DynamoDB backend) and **Save and deploy**.
-4. After the build finishes (~5–10 min) you get a URL like
-   `https://main.xxxxxxxx.amplifyapp.com`.
-5. Open `https://<app-url>/#/admin` — the admin page creates the session record
-   on first load and shows the audience QR code.
-6. Put `https://<app-url>/#/display` fullscreen on the projector.
+You need a Cloudflare account (the free plan is enough).
 
-Everything (frontend build + AppSync API + DynamoDB tables) deploys from that
-one branch build — there is no separate backend deployment step.
+**From your machine:**
+
+```bash
+npx wrangler login     # once
+npm run deploy         # build + deploy
+```
+
+Wrangler prints the URL, e.g. `https://ai-motion-voting.<your-subdomain>.workers.dev`.
+
+**Or from GitHub (deploys on every push):** Cloudflare dashboard → **Workers &
+Pages → Create → Import a repository** → pick this repo, then set:
+
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+
+Then:
+
+1. Open `https://<url>/#/admin` and upload the presenter CSV.
+2. Put `https://<url>/#/display` fullscreen on the projector.
+
+A custom domain can be added under the Worker's **Settings → Domains & Routes**.
 
 ### Event-day flow
 
@@ -122,32 +141,30 @@ Jane Doe,RoboBarista,Acme
 - **Logo:** replace `public/ai-motion-logo.svg` with the real logo (a
   placeholder is committed). To use a PNG, change `LOGO_SRC` in `src/config.ts`.
 - **Lead Bounty link** on the mobile page: `AI_MOTION_PAGE_URL` in
-  `src/config.ts`, or set the `VITE_AI_MOTION_PAGE_URL` env var in Amplify.
+  `src/config.ts`, or set the `VITE_AI_MOTION_PAGE_URL` build variable (it is baked in at build time).
 - **Timer presets:** `TIMER_PRESETS_MIN` in `src/config.ts`.
 
 ## Tear down after the event
 
-Everything lives in one Amplify app, so removal is one action:
+```bash
+npm run destroy        # = wrangler delete
+```
 
-- **Console:** Amplify → your app → **App settings → General → Delete app**.
-  This deletes the hosting **and** the backend CloudFormation stack
-  (AppSync API, DynamoDB tables, API key).
-- **Sandbox** (if you used one for development): `npx ampx sandbox delete`.
+This deletes the Worker, its static files **and** the Durable Object with all
+its stored data (presenters, votes). Or in the dashboard: **Workers & Pages →
+ai-motion-voting → Settings → Delete**.
 
-Verify: CloudFormation console → confirm the `amplify-…` stacks are gone
-(in the region you deployed to). DynamoDB and AppSync consoles should show no
-leftover resources. Cost after deletion: $0.
+To only clear the data but keep the app online, use **Clear list** on the admin
+page.
 
-## Notes & limits (V1)
+## Notes & limits
 
-- One event/session at a time; no audience accounts; no admin login — anyone
-  with the URL can open `/#/admin`, so don't share that path publicly.
-- The AppSync API key expires after 30 days as a safety net; the stack is meant
-  to be deleted well before that.
-- Presence is heartbeat-based (20 s beat / 60 s window), so someone closing
-  their browser drops out of the count within a minute.
-- The timer counts down to an end timestamp written by the admin's device, so
-  each screen relies on its own clock being correct (normally true — phones and
-  laptops sync time automatically).
-- Costs during the event are effectively pennies: DynamoDB on-demand +
-  AppSync per-request/subscription pricing, no idle servers.
+- One event at a time; no audience accounts; no admin login — anyone with the
+  URL can open `/#/admin`, so don't share that path publicly.
+- A single Durable Object handles thousands of simultaneous WebSockets, far
+  more than a room of people.
+- Presence is ping-based (20 s ping / 60 s window): someone whose phone loses
+  signal drops out of the count within about a minute; someone who closes the
+  tab drops out immediately.
+- Cost: well within the Workers free plan for an event (requests, Durable
+  Object usage and storage are all tiny; idle sockets hibernate).

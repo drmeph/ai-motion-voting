@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-motion-voting",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  // The built React app. Matching files are served directly; everything
+  // else (i.e. /api/ws) runs the Worker. Hash routing → no SPA fallback needed.
+  "assets": {
+    "directory": "./dist"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "EVENT_ROOM", "class_name": "EventRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EventRoom"] }],
+  "observability": { "enabled": true }
+}

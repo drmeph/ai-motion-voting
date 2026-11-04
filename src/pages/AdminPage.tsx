@@ -4,16 +4,14 @@ import { QRCodeSVG } from 'qrcode.react';
 import Logo from '../components/Logo';
 import PresenterQueue from '../components/PresenterQueue';
 import TimerControls from '../components/TimerControls';
-import { getClient, SESSION_ID, type Presenter } from '../lib/client';
-import { readTimer, timerPatch } from '../lib/timer';
-import { useLiveVoting } from '../lib/useLiveVoting';
+import { call, useLive } from '../lib/live';
 
 /**
  * Event admin panel: presenter queue (CSV import, ordering, random pick),
  * stage timer, manual pitcher override, live stats and the join QR.
  */
 export default function AdminPage() {
-  const { session, sessionLoaded, stats } = useLiveVoting();
+  const { session, loaded, connected, stats, presenters, clockOffset } = useLive('admin');
   const [pitcherName, setPitcherName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -21,78 +19,39 @@ export default function AdminPage() {
 
   const joinUrl = `${window.location.origin}${window.location.pathname}#/`;
 
-  // Create the singleton session record the first time the admin opens up.
-  useEffect(() => {
-    if (!sessionLoaded || session) return;
-    getClient()
-      .models.Session.create({ id: SESSION_ID, pitcherName: '', projectName: '', round: 0 })
-      .catch((err) => console.error('Failed to create session', err));
-  }, [sessionLoaded, session]);
-
-  // Pre-fill the form with the current pitcher once the session arrives.
+  // Sync the form with the pitcher whenever a new round starts (or on first load).
   useEffect(() => {
     if (session) {
-      setPitcherName(session.pitcherName ?? '');
-      setProjectName(session.projectName ?? '');
+      setPitcherName(session.pitcherName);
+      setProjectName(session.projectName);
     }
-    // Only sync on first load / external change of pitcher, not every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.round]);
+  }, [loaded, session?.round]);
 
-  async function setPitcher(resetVotes: boolean) {
-    if (!session) return;
+  async function run(fn: () => Promise<void>, ok: string, failed: string) {
     setBusy(true);
     setNotice(null);
     try {
-      await getClient().models.Session.update({
-        id: session.id,
-        pitcherName: pitcherName.trim(),
-        projectName: projectName.trim(),
-        round: resetVotes ? session.round + 1 : session.round,
-        ...(resetVotes ? { currentPresenterId: null, ...timerPatch.reset(readTimer(session, Date.now())) } : {}),
-      });
-      setNotice(resetVotes ? 'Pitcher set — votes reset.' : 'Pitcher updated.');
+      await fn();
+      setNotice(ok);
     } catch (err) {
-      console.error('Failed to update session', err);
-      setNotice('Update failed — check the console.');
+      console.error(failed, err);
+      setNotice(`${failed} — ${err instanceof Error ? err.message : 'check the console'}.`);
     } finally {
       setBusy(false);
     }
   }
 
-  /** Put a queued presenter on stage: new round, timer reset, marked as presented. */
-  async function putOnStage(p: Presenter) {
-    if (!session) return;
-    const client = getClient();
-    await client.models.Session.update({
-      id: session.id,
-      pitcherName: p.name,
-      projectName: p.projectName ?? '',
-      currentPresenterId: p.id,
-      round: session.round + 1,
-      ...timerPatch.reset(readTimer(session, Date.now())),
-    });
-    setPitcherName(p.name);
-    setProjectName(p.projectName ?? '');
-    await client.models.Presenter.update({ id: p.id, presentedAt: Date.now() });
-  }
+  const setPitcher = (resetVotes: boolean) =>
+    run(
+      () => call('setPitcher', { pitcherName, projectName, resetVotes }),
+      resetVotes ? 'Pitcher set — votes reset.' : 'Pitcher updated.',
+      'Update failed',
+    );
 
-  async function resetVotes() {
-    if (!session) return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      await getClient().models.Session.update({ id: session.id, round: session.round + 1 });
-      setNotice('Votes reset.');
-    } catch (err) {
-      console.error('Failed to reset votes', err);
-      setNotice('Reset failed — check the console.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const resetVotes = () => run(() => call('resetVotes'), 'Votes reset.', 'Reset failed');
 
-  if (!sessionLoaded) {
+  if (!loaded || !session) {
     return (
       <div className="center-screen">
         <p className="muted">Connecting…</p>
@@ -106,6 +65,7 @@ export default function AdminPage() {
         <div className="admin-title">
           <Logo className="logo-sm" />
           <h1>Event Admin</h1>
+          {!connected && <span className="badge">Reconnecting…</span>}
         </div>
         <Link to="/display" className="btn btn-ghost" target="_blank">
           Open display screen ↗
@@ -113,9 +73,9 @@ export default function AdminPage() {
       </header>
 
       <div className="admin-grid">
-        {session && <PresenterQueue session={session} onStage={putOnStage} />}
+        <PresenterQueue session={session} presenters={presenters} />
 
-        {session && <TimerControls session={session} />}
+        <TimerControls session={session} clockOffset={clockOffset} />
 
         <section className="card">
           <h2>Current pitcher</h2>
@@ -151,8 +111,8 @@ export default function AdminPage() {
           </div>
           {notice && <p className="muted">{notice}</p>}
           <p className="muted small">
-            On stage now: <strong>{session?.pitcherName || '—'}</strong>
-            {session?.projectName ? ` · ${session.projectName}` : ''} · round {session?.round ?? 0}
+            On stage now: <strong>{session.pitcherName || '—'}</strong>
+            {session.projectName ? ` · ${session.projectName}` : ''} · round {session.round ?? 0}
           </p>
         </section>
 
