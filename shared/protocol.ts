@@ -54,6 +54,8 @@ export interface PresenterInput {
 
 /** Every operation a client can request, with its arguments. */
 export interface Ops {
+  // admin login: must succeed on each connection before any admin op
+  auth: { password: string };
   // audience
   vote: { vote: VoteValue };
   // admin

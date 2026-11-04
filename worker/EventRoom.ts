@@ -19,6 +19,9 @@ interface Attachment {
   /** Audience device id (localStorage UUID); one device = one vote. */
   pid?: string;
   connectedAt: number;
+  /** Admin sockets only: true once the password was accepted. */
+  authed?: boolean;
+  failedLogins?: number;
 }
 
 interface StoredVote {
@@ -40,6 +43,21 @@ const ADMIN_OPS = new Set<OpName>([
   'removePresenter',
   'clearPresenters',
 ]);
+
+/** Wrong passwords allowed per connection before it is closed. */
+const MAX_FAILED_LOGINS = 5;
+/** Wrong passwords allowed across all connections per minute. */
+const MAX_FAILED_LOGINS_PER_MINUTE = 20;
+
+/** Constant-time password check (hash first so lengths always match). */
+async function passwordMatches(given: string, expected: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(given)),
+    crypto.subtle.digest('SHA-256', enc.encode(expected)),
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
 
 /** Coalesce bursts of votes into one broadcast per window. */
 const BROADCAST_DELAY_MS = 150;
@@ -65,6 +83,8 @@ export class EventRoom extends DurableObject<Env> {
   private votes = new Map<string, StoredVote>();
   private broadcastTimer: ReturnType<typeof setTimeout> | null = null;
   private lastStatsJson = '';
+  /** Timestamps of recent wrong passwords (all connections). */
+  private recentFailures: number[] = [];
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -109,6 +129,10 @@ export class EventRoom extends DurableObject<Env> {
       return;
     }
     const att = ws.deserializeAttachment() as Attachment;
+    if (req.op === 'auth') {
+      await this.login(ws, att, req as ClientRequest<'auth'>);
+      return;
+    }
     try {
       await this.handle(req, att);
       this.reply(ws, { type: 'ack', id: req.id });
@@ -149,7 +173,7 @@ export class EventRoom extends DurableObject<Env> {
   // ---------------------------------------------------------------- ops
 
   private async handle(req: ClientRequest, att: Attachment) {
-    if (ADMIN_OPS.has(req.op) && att.role !== 'admin') throw new Error('Not allowed');
+    if (ADMIN_OPS.has(req.op) && !(att.role === 'admin' && att.authed)) throw new Error('Not allowed');
     const now = Date.now();
     const s = this.session;
 
@@ -260,6 +284,44 @@ export class EventRoom extends DurableObject<Env> {
     this.broadcast();
   }
 
+  private async login(ws: WebSocket, att: Attachment, req: ClientRequest<'auth'>) {
+    const fail = (error: string) => {
+      this.reply(ws, { type: 'ack', id: req.id, error });
+      if ((att.failedLogins ?? 0) >= MAX_FAILED_LOGINS) {
+        try {
+          ws.close(4003, 'Too many failed logins');
+        } catch {
+          // ignore
+        }
+      }
+    };
+    const expected = this.env.ADMIN_PASSWORD;
+    if (att.role !== 'admin') return fail('Not allowed');
+    if (!expected) return fail('Admin password is not configured on the server');
+
+    // Count the attempt *before* any await, so parallel attempts on one
+    // socket can't all slip through, and throttle guessing across sockets.
+    const now = Date.now();
+    this.recentFailures = this.recentFailures.filter((t) => now - t < 60_000);
+    if ((att.failedLogins ?? 0) >= MAX_FAILED_LOGINS) return fail('Too many failed logins');
+    if (this.recentFailures.length >= MAX_FAILED_LOGINS_PER_MINUTE) {
+      return fail('Too many failed logins, try again in a minute');
+    }
+    att.failedLogins = (att.failedLogins ?? 0) + 1;
+    ws.serializeAttachment(att);
+
+    if (!(await passwordMatches(String(req.args?.password ?? ''), expected))) {
+      this.recentFailures.push(Date.now());
+      await new Promise((r) => setTimeout(r, 1000)); // slow down guessing
+      return fail('Wrong password');
+    }
+    att.authed = true;
+    att.failedLogins = 0;
+    ws.serializeAttachment(att);
+    this.reply(ws, { type: 'ack', id: req.id });
+    this.send(ws);
+  }
+
   private resetTimer() {
     const t = this.session.timer;
     this.session.timer = { durationMs: t.durationMs, remainingMs: t.durationMs ?? 0, endsAt: null, running: false };
@@ -346,7 +408,7 @@ export class EventRoom extends DurableObject<Env> {
       const v = this.votes.get(att.pid);
       msg.myVote = v && v.round === this.session.round ? v.vote : null;
     }
-    if (att.role === 'admin') msg.presenters = this.presenters;
+    if (att.role === 'admin' && att.authed) msg.presenters = this.presenters;
     this.reply(ws, msg);
   }
 

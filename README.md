@@ -67,6 +67,7 @@ browser ──HTTP──▶ Worker ──▶ static files from dist/
 
 ```bash
 npm install
+echo 'ADMIN_PASSWORD=pick-a-local-password' > .dev.vars   # once; git-ignored
 npm run dev        # builds the app, runs the Worker + Durable Object locally
                    # → http://localhost:8787
 ```
@@ -84,8 +85,9 @@ You need a Cloudflare account (the free plan is enough).
 **From your machine:**
 
 ```bash
-npx wrangler login     # once
-npm run deploy         # build + deploy
+npx wrangler login                    # once
+npm run deploy                        # build + deploy
+npx wrangler secret put ADMIN_PASSWORD   # once: type the admin password when asked
 ```
 
 Wrangler prints the URL, e.g. `https://ai-motion-voting.<your-subdomain>.workers.dev`.
@@ -96,9 +98,29 @@ Pages → Create → Import a repository** → pick this repo, then set:
 - Build command: `npm run build`
 - Deploy command: `npx wrangler deploy`
 
+and add the password under the Worker's **Settings → Variables and Secrets →
+Add → Secret** named `ADMIN_PASSWORD` (or run the `wrangler secret put`
+command above).
+
+### Admin password
+
+The admin page asks for a password, stored as the Cloudflare secret
+`ADMIN_PASSWORD`, never in the code or the repo.
+
+- **Change it:** run `npx wrangler secret put ADMIN_PASSWORD` again (or edit it
+  in the dashboard). It takes effect right away. Open admin pages reconnect and
+  have to log in with the new password; phones reconnect on their own.
+- **Not set:** the admin page refuses every login, so nobody can change anything.
+- The password is checked on the server for every admin connection. The vote
+  and display pages need no password, and phones can't change the event.
+- The admin browser remembers the password (in `localStorage`) until you click
+  **Log out**.
+- Guessing is limited: 5 wrong tries per connection and 20 per minute overall
+  (after that, everyone, including you, waits a minute).
+
 Then:
 
-1. Open `https://<url>/#/admin` and upload the presenter CSV.
+1. Open `https://<url>/#/admin`, log in, and upload the presenter CSV.
 2. Put `https://<url>/#/display` fullscreen on the projector.
 
 A custom domain can be added under the Worker's **Settings → Domains & Routes**.
@@ -158,8 +180,9 @@ To reuse the app for another event without redeploying, use **Clear list** and
 
 ## Notes & limits
 
-- One event at a time; no audience accounts; no admin login — anyone with the
-  URL can open `/#/admin`, so don't share that path publicly.
+- One event at a time; no audience accounts. The admin page is protected by a
+  single shared password (see *Admin password*); there are no per-person
+  admin accounts.
 - A single Durable Object handles thousands of simultaneous WebSockets, far
   more than a room of people.
 - Presence is ping-based (20 s ping / 60 s window): someone whose phone loses

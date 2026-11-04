@@ -4,14 +4,15 @@ import { QRCodeSVG } from 'qrcode.react';
 import Logo from '../components/Logo';
 import PresenterQueue from '../components/PresenterQueue';
 import TimerControls from '../components/TimerControls';
-import { call, useLive } from '../lib/live';
+import { call, hasSavedPassword, login, logout, useLive } from '../lib/live';
 
 /**
  * Event admin panel: presenter queue (CSV import, ordering, random pick),
  * stage timer, manual pitcher override, live stats and the join QR.
  */
 export default function AdminPage() {
-  const { session, loaded, connected, stats, presenters, clockOffset } = useLive('admin');
+  const { session, loaded, connected, stats, presenters, clockOffset, authed, authChecking, authError } =
+    useLive('admin');
   const [pitcherName, setPitcherName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,6 +60,12 @@ export default function AdminPage() {
     );
   }
 
+  // While reconnecting with a saved password, keep the panel up instead of flashing the login form.
+  const reconnecting = !connected && hasSavedPassword();
+  if (!authed && !authChecking && !reconnecting) {
+    return <LoginForm connected={connected} error={authError} />;
+  }
+
   return (
     <div className="admin-page">
       <header className="admin-header">
@@ -67,9 +74,14 @@ export default function AdminPage() {
           <h1>Event Admin</h1>
           {!connected && <span className="badge">Reconnecting…</span>}
         </div>
-        <Link to="/display" className="btn btn-ghost" target="_blank">
-          Open display screen ↗
-        </Link>
+        <div className="btn-row">
+          <Link to="/display" className="btn btn-ghost" target="_blank">
+            Open display screen ↗
+          </Link>
+          <button className="btn btn-ghost" onClick={logout}>
+            Log out
+          </button>
+        </div>
       </header>
 
       <div className="admin-grid">
@@ -165,6 +177,46 @@ export default function AdminPage() {
           </p>
         </section>
       </div>
+    </div>
+  );
+}
+
+function LoginForm({ connected, error }: { connected: boolean; error: string | null }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await login(password);
+    } catch {
+      // error is shown from the live state
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="center-screen">
+      <form className="card login-card" onSubmit={submit}>
+        <Logo className="logo-login" />
+        <h1>Event Admin</h1>
+        <label className="field">
+          <span>Password</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary btn-block" disabled={busy || !connected || !password}>
+          {busy ? 'Checking…' : connected ? 'Log in' : 'Connecting…'}
+        </button>
+        {error && <p className="bad-text small">{error}</p>}
+      </form>
     </div>
   );
 }

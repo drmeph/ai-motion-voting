@@ -784,3 +784,20 @@ pre {
     font-size: clamp(1.8rem, 5.5vh, 3.4rem);
   }
 }
+
+/* ---------- admin login ---------- */
+
+.login-card {
+  width: min(360px, 100%);
+  text-align: center;
+}
+
+.login-card .field {
+  text-align: left;
+  margin-top: 1rem;
+}
+
+.logo-login {
+  height: 6rem;
+  margin: 0 auto 0.75rem;
+}

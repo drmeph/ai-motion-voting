@@ -24,9 +24,29 @@ export interface LiveState {
   presenters: Presenter[];
   /** serverClock ≈ Date.now() + clockOffset */
   clockOffset: number;
+  /** Admin only: the password was accepted on the current connection. */
+  authed: boolean;
+  /** Admin only: an automatic login with the saved password is in flight. */
+  authChecking: boolean;
+  authError: string | null;
 }
 
 const PARTICIPANT_KEY = 'pitch-vote-participant-id';
+const ADMIN_PASSWORD_KEY = 'pitch-vote-admin-password';
+
+function storage(op: 'get'): string | null;
+function storage(op: 'set', value: string): void;
+function storage(op: 'remove'): void;
+function storage(op: 'get' | 'set' | 'remove', value?: string) {
+  try {
+    if (op === 'get') return localStorage.getItem(ADMIN_PASSWORD_KEY);
+    if (op === 'set') localStorage.setItem(ADMIN_PASSWORD_KEY, value!);
+    else localStorage.removeItem(ADMIN_PASSWORD_KEY);
+  } catch {
+    // storage blocked: the admin just has to log in again after a reload
+  }
+  return null;
+}
 
 const emptyStats: VoteStats = { activeCount: 0, upCount: 0, downCount: 0, votedCount: 0, upPercent: null, passing: false };
 
@@ -57,6 +77,9 @@ class LiveConnection {
     myVote: null,
     presenters: [],
     clockOffset: 0,
+    authed: false,
+    authChecking: false,
+    authError: null,
   };
   private listeners = new Set<() => void>();
   private ws: WebSocket | null = null;
@@ -127,6 +150,14 @@ class LiveConnection {
       this.set({ connected: true });
       ws.send('ping');
       this.pingTimer = window.setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), PING_MS);
+      // Admins re-login automatically on every (re)connect with the saved password.
+      const saved = this.role === 'admin' ? storage('get') : null;
+      if (saved) {
+        this.set({ authChecking: true });
+        this.auth(saved)
+          .catch(() => undefined)
+          .finally(() => this.set({ authChecking: false }));
+      }
     };
     ws.onmessage = (ev) => {
       if (ev.data === 'pong') return;
@@ -152,7 +183,7 @@ class LiveConnection {
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.cleanupSocket();
-      this.set({ connected: false });
+      this.set({ connected: false, authed: false });
       if (this.role) {
         const delay = Math.min(10_000, 500 * 2 ** this.retry++);
         this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
@@ -177,6 +208,33 @@ class LiveConnection {
       ws.onclose = null;
       ws.close();
     }
+  }
+
+  private async auth(password: string) {
+    try {
+      await this.call('auth', { password });
+      this.set({ authed: true, authError: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Forget the saved password only if it is actually wrong (not on throttling or a dropped connection).
+      if (message === 'Wrong password') storage('remove');
+      this.set({ authed: false, authError: message });
+      throw err;
+    }
+  }
+
+  /** Admin login from the password form; remembers the password on this device. */
+  async login(password: string) {
+    await this.auth(password);
+    storage('set', password);
+  }
+
+  /** Forget the password and drop admin rights on this device. */
+  logout() {
+    storage('remove');
+    this.set({ authed: false, authError: null, presenters: [] });
+    this.close();
+    this.connect();
   }
 
   call<K extends OpName>(op: K, ...[args]: Ops[K] extends Record<string, never> ? [] : [Ops[K]]): Promise<void> {
@@ -204,3 +262,6 @@ export function useLive(role: Role): LiveState {
 
 /** Send an operation to the event room; resolves when the server applied it. */
 export const call = connection.call.bind(connection);
+export const login = connection.login.bind(connection);
+export const logout = connection.logout.bind(connection);
+export const hasSavedPassword = () => storage('get') !== null;

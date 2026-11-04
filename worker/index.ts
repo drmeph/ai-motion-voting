@@ -5,6 +5,8 @@ export { EventRoom };
 export interface Env {
   EVENT_ROOM: DurableObjectNamespace<EventRoom>;
   ASSETS: Fetcher;
+  /** Admin page password. Set with `npx wrangler secret put ADMIN_PASSWORD`. */
+  ADMIN_PASSWORD?: string;
 }
 
 /**
