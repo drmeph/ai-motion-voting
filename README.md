@@ -154,8 +154,8 @@ This deletes the Worker, its static files **and** the Durable Object with all
 its stored data (presenters, votes). Or in the dashboard: **Workers & Pages →
 ai-motion-voting → Settings → Delete**.
 
-To only clear the data but keep the app online, use **Clear list** on the admin
-page.
+To reuse the app for another event without redeploying, use **Clear list** and
+**Reset votes** on the admin page.
 
 ## Notes & limits
 
