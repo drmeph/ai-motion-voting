@@ -1,9 +1,9 @@
 node_modules/
 dist/
 
-# Amplify generated artifacts (recreated by `ampx sandbox` / pipeline-deploy)
-amplify_outputs.json
-.amplify/
+# Wrangler local state (local Durable Object storage, etc.)
+.wrangler/
+.dev.vars
 
 .DS_Store
 *.log

@@ -1,99 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { getClient, type Participant } from '../lib/client';
-import { HEARTBEAT_MS, useLiveVoting } from '../lib/useLiveVoting';
-
-const PARTICIPANT_KEY = 'pitch-vote-participant-id';
-
-function getParticipantId(): string {
-  let id = localStorage.getItem(PARTICIPANT_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(PARTICIPANT_KEY, id);
-  }
-  return id;
-}
+import { useState } from 'react';
+import Logo from '../components/Logo';
+import TimerDisplay from '../components/TimerDisplay';
+import { AI_MOTION_PAGE_URL } from '../config';
+import { call, useLive, type VoteValue } from '../lib/live';
+import { useTimer } from '../lib/timer';
 
 /**
- * Mobile audience view. Registers this device as a Participant, keeps a
- * lastSeenAt heartbeat running, and lets the user vote (and change their
- * vote) for the current round.
+ * Mobile audience view. Being connected counts this device as "in the room";
+ * the user can vote (and change their vote) for the current round.
  */
 export default function VotePage() {
-  const { session, sessionLoaded, stats } = useLiveVoting();
-  const [me, setMe] = useState<Participant | null>(null);
-  const [pending, setPending] = useState<'up' | 'down' | null>(null);
-  const meRef = useRef<Participant | null>(null);
-  meRef.current = me;
+  const { session, loaded, stats, myVote, connected, clockOffset } = useLive('audience');
+  const timer = useTimer(session, clockOffset);
+  const [pending, setPending] = useState<VoteValue | null>(null);
 
-  // Register this device and keep the presence heartbeat alive.
-  useEffect(() => {
-    const client = getClient();
-    const id = getParticipantId();
-    let cancelled = false;
-
-    async function register() {
-      const existing = await client.models.Participant.get({ id });
-      if (cancelled) return;
-      if (existing.data) {
-        const updated = await client.models.Participant.update({ id, lastSeenAt: Date.now() });
-        if (!cancelled) setMe(updated.data ?? existing.data);
-      } else {
-        const created = await client.models.Participant.create({ id, lastSeenAt: Date.now() });
-        if (!cancelled) setMe(created.data);
-      }
+  async function castVote(vote: VoteValue) {
+    setPending(vote);
+    try {
+      await call('vote', { vote });
+    } catch (err) {
+      console.error('Vote failed', err);
+    } finally {
+      setPending(null);
     }
+  }
 
-    async function heartbeat() {
-      const updated = await client.models.Participant.update({ id, lastSeenAt: Date.now() });
-      if (!cancelled && updated.data) setMe(updated.data);
-    }
-
-    register().catch((err) => console.error('Failed to join session', err));
-    const interval = window.setInterval(() => {
-      heartbeat().catch((err) => console.error('Heartbeat failed', err));
-    }, HEARTBEAT_MS);
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        heartbeat().catch((err) => console.error('Heartbeat failed', err));
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
-
-  const castVote = useCallback(
-    async (vote: 'up' | 'down') => {
-      const current = meRef.current;
-      if (!current || !session) return;
-      setPending(vote);
-      try {
-        const updated = await getClient().models.Participant.update({
-          id: current.id,
-          vote,
-          votedRound: session.round,
-          lastSeenAt: Date.now(),
-        });
-        if (updated.data) setMe(updated.data);
-      } catch (err) {
-        console.error('Vote failed', err);
-      } finally {
-        setPending(null);
-      }
-    },
-    [session],
-  );
-
-  const round = session?.round ?? 0;
-  const myVote = me && me.votedRound === round ? me.vote : null;
   const hasPitcher = Boolean(session?.pitcherName);
 
-  if (!sessionLoaded) {
+  if (!loaded) {
     return (
       <div className="center-screen">
         <p className="muted">Connecting…</p>
@@ -104,13 +38,18 @@ export default function VotePage() {
   return (
     <div className="vote-page">
       <header className="vote-header">
-        <span className="live-dot" aria-hidden />
-        <span className="muted">
-          {stats.activeCount} {stats.activeCount === 1 ? 'person' : 'people'} in the room
+        <span className="vote-presence">
+          <span className={`live-dot ${connected ? "" : "off"}`} aria-hidden />
+          <span className="muted">
+            {connected
+              ? `${stats.activeCount} ${stats.activeCount === 1 ? 'person' : 'people'} in the room`
+              : 'Reconnecting…'}
+          </span>
         </span>
       </header>
 
       <main className="vote-main">
+        <Logo className="logo-vote" />
         {hasPitcher ? (
           <>
             <p className="eyebrow">Now pitching</p>
@@ -125,13 +64,15 @@ export default function VotePage() {
           </>
         )}
 
+        <TimerDisplay timer={timer} className="timer-vote" />
+
         <p className="vote-question">Should they continue?</p>
 
         <div className="vote-buttons">
           <button
             className={`vote-btn vote-up ${myVote === 'up' ? 'selected' : ''}`}
             onClick={() => castVote('up')}
-            disabled={!me || !hasPitcher || pending !== null}
+            disabled={!connected || !hasPitcher || pending !== null}
           >
             <span className="vote-emoji">👍</span>
             <span>Continue</span>
@@ -139,7 +80,7 @@ export default function VotePage() {
           <button
             className={`vote-btn vote-down ${myVote === 'down' ? 'selected' : ''}`}
             onClick={() => castVote('down')}
-            disabled={!me || !hasPitcher || pending !== null}
+            disabled={!connected || !hasPitcher || pending !== null}
           >
             <span className="vote-emoji">👎</span>
             <span>Stop</span>
@@ -154,6 +95,12 @@ export default function VotePage() {
               : 'Voting opens when a pitcher is on stage.'}
         </p>
       </main>
+
+      <footer className="vote-footer">
+        <a href={AI_MOTION_PAGE_URL} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-block">
+          Visit AI Motion on Lead Bounty ↗
+        </a>
+      </footer>
     </div>
   );
 }

@@ -1,12 +1,16 @@
 import { QRCodeSVG } from 'qrcode.react';
-import { useLiveVoting } from '../lib/useLiveVoting';
+import Logo from '../components/Logo';
+import TimerDisplay from '../components/TimerDisplay';
+import { useTimer } from '../lib/timer';
+import { useLive } from '../lib/live';
 
 /** Big-screen projector view. Everything updates live via AppSync subscriptions. */
 export default function DisplayPage() {
-  const { session, sessionLoaded, stats } = useLiveVoting();
+  const { session, loaded, stats, clockOffset } = useLive('display');
+  const timer = useTimer(session, clockOffset);
   const joinUrl = `${window.location.origin}${window.location.pathname}#/`;
 
-  if (!sessionLoaded) {
+  if (!loaded) {
     return (
       <div className="center-screen">
         <p className="muted">Connecting…</p>
@@ -20,15 +24,18 @@ export default function DisplayPage() {
   return (
     <div className="display-page">
       <header className="display-header">
-        <div>
-          {hasPitcher ? (
-            <>
-              <h1 className="display-pitcher">{session!.pitcherName}</h1>
-              {session?.projectName && <p className="display-project">{session.projectName}</p>}
-            </>
-          ) : (
-            <h1 className="display-pitcher muted">Waiting for the next pitcher…</h1>
-          )}
+        <div className="display-left">
+          <Logo className="logo-display" />
+          <div>
+            {hasPitcher ? (
+              <>
+                <h1 className="display-pitcher">{session!.pitcherName}</h1>
+                {session?.projectName && <p className="display-project">{session.projectName}</p>}
+              </>
+            ) : (
+              <h1 className="display-pitcher muted">Waiting for the next pitcher…</h1>
+            )}
+          </div>
         </div>
         <div className="display-join">
           <QRCodeSVG value={joinUrl} size={140} bgColor="#ffffff" fgColor="#0b0f17" marginSize={2} />
@@ -37,6 +44,7 @@ export default function DisplayPage() {
       </header>
 
       <main className="display-main">
+        <TimerDisplay timer={timer} className="timer-display" />
         <div className={`display-percent ${pct === null ? '' : stats.passing ? 'good' : 'bad'}`}>
           {pct === null ? '—' : `${pct}%`}
         </div>

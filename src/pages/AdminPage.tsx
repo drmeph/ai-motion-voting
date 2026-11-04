@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { getClient, SESSION_ID } from '../lib/client';
-import { useLiveVoting } from '../lib/useLiveVoting';
+import Logo from '../components/Logo';
+import PresenterQueue from '../components/PresenterQueue';
+import TimerControls from '../components/TimerControls';
+import { call, hasSavedPassword, login, logout, useLive } from '../lib/live';
 
 /**
- * Event admin panel: set/update the current pitcher, watch live participation
- * and vote percentages, reset votes between pitchers, and share the join QR.
+ * Event admin panel: presenter queue (CSV import, ordering, random pick),
+ * stage timer, manual pitcher override, live stats and the join QR.
  */
 export default function AdminPage() {
-  const { session, sessionLoaded, stats } = useLiveVoting();
+  const { session, loaded, connected, stats, presenters, clockOffset, authed, authChecking, authError } =
+    useLive('admin');
   const [pitcherName, setPitcherName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,60 +20,39 @@ export default function AdminPage() {
 
   const joinUrl = `${window.location.origin}${window.location.pathname}#/`;
 
-  // Create the singleton session record the first time the admin opens up.
-  useEffect(() => {
-    if (!sessionLoaded || session) return;
-    getClient()
-      .models.Session.create({ id: SESSION_ID, pitcherName: '', projectName: '', round: 0 })
-      .catch((err) => console.error('Failed to create session', err));
-  }, [sessionLoaded, session]);
-
-  // Pre-fill the form with the current pitcher once the session arrives.
+  // Sync the form with the pitcher whenever a new round starts (or on first load).
   useEffect(() => {
     if (session) {
-      setPitcherName(session.pitcherName ?? '');
-      setProjectName(session.projectName ?? '');
+      setPitcherName(session.pitcherName);
+      setProjectName(session.projectName);
     }
-    // Only sync on first load / external change of pitcher, not every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, session?.round]);
+  }, [loaded, session?.round]);
 
-  async function setPitcher(resetVotes: boolean) {
-    if (!session) return;
+  async function run(fn: () => Promise<void>, ok: string, failed: string) {
     setBusy(true);
     setNotice(null);
     try {
-      await getClient().models.Session.update({
-        id: session.id,
-        pitcherName: pitcherName.trim(),
-        projectName: projectName.trim(),
-        round: resetVotes ? session.round + 1 : session.round,
-      });
-      setNotice(resetVotes ? 'Pitcher set — votes reset.' : 'Pitcher updated.');
+      await fn();
+      setNotice(ok);
     } catch (err) {
-      console.error('Failed to update session', err);
-      setNotice('Update failed — check the console.');
+      console.error(failed, err);
+      setNotice(`${failed} — ${err instanceof Error ? err.message : 'check the console'}.`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function resetVotes() {
-    if (!session) return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      await getClient().models.Session.update({ id: session.id, round: session.round + 1 });
-      setNotice('Votes reset.');
-    } catch (err) {
-      console.error('Failed to reset votes', err);
-      setNotice('Reset failed — check the console.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const setPitcher = (resetVotes: boolean) =>
+    run(
+      () => call('setPitcher', { pitcherName, projectName, resetVotes }),
+      resetVotes ? 'Pitcher set — votes reset.' : 'Pitcher updated.',
+      'Update failed',
+    );
 
-  if (!sessionLoaded) {
+  const resetVotes = () => run(() => call('resetVotes'), 'Votes reset.', 'Reset failed');
+
+  if (!loaded || !session) {
     return (
       <div className="center-screen">
         <p className="muted">Connecting…</p>
@@ -78,18 +60,38 @@ export default function AdminPage() {
     );
   }
 
+  // While reconnecting with a saved password, keep the panel up instead of flashing the login form.
+  const reconnecting = !connected && hasSavedPassword();
+  if (!authed && !authChecking && !reconnecting) {
+    return <LoginForm connected={connected} error={authError} />;
+  }
+
   return (
     <div className="admin-page">
       <header className="admin-header">
-        <h1>Event Admin</h1>
-        <Link to="/display" className="btn btn-ghost" target="_blank">
-          Open display screen ↗
-        </Link>
+        <div className="admin-title">
+          <Logo className="logo-sm" />
+          <h1>Event Admin</h1>
+          {!connected && <span className="badge">Reconnecting…</span>}
+        </div>
+        <div className="btn-row">
+          <Link to="/display" className="btn btn-ghost" target="_blank">
+            Open display screen ↗
+          </Link>
+          <button className="btn btn-ghost" onClick={logout}>
+            Log out
+          </button>
+        </div>
       </header>
 
       <div className="admin-grid">
+        <PresenterQueue session={session} presenters={presenters} />
+
+        <TimerControls session={session} clockOffset={clockOffset} />
+
         <section className="card">
           <h2>Current pitcher</h2>
+          <p className="muted small">Manual override — or use the presenter list above.</p>
           <label className="field">
             <span>Pitcher name</span>
             <input
@@ -121,8 +123,8 @@ export default function AdminPage() {
           </div>
           {notice && <p className="muted">{notice}</p>}
           <p className="muted small">
-            On stage now: <strong>{session?.pitcherName || '—'}</strong>
-            {session?.projectName ? ` · ${session.projectName}` : ''} · round {session?.round ?? 0}
+            On stage now: <strong>{session.pitcherName || '—'}</strong>
+            {session.projectName ? ` · ${session.projectName}` : ''} · round {session.round ?? 0}
           </p>
         </section>
 
@@ -175,6 +177,46 @@ export default function AdminPage() {
           </p>
         </section>
       </div>
+    </div>
+  );
+}
+
+function LoginForm({ connected, error }: { connected: boolean; error: string | null }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await login(password);
+    } catch {
+      // error is shown from the live state
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="center-screen">
+      <form className="card login-card" onSubmit={submit}>
+        <Logo className="logo-login" />
+        <h1>Event Admin</h1>
+        <label className="field">
+          <span>Password</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary btn-block" disabled={busy || !connected || !password}>
+          {busy ? 'Checking…' : connected ? 'Log in' : 'Connecting…'}
+        </button>
+        {error && <p className="bad-text small">{error}</p>}
+      </form>
     </div>
   );
 }
