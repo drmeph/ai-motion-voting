@@ -743,3 +743,8 @@ pre {
     width: 100%;
   }
 }
+
+.live-dot.off {
+  background: var(--muted);
+  box-shadow: none;
+}

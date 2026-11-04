@@ -1,8 +1,8 @@
 import { TIMER_WARN_MS } from '../config';
-import { formatTimer, type TimerState } from '../lib/timer';
+import { formatTimer, type TimerView } from '../lib/timer';
 
 /** Visual countdown. Renders nothing until a timer has been started once. */
-export default function TimerDisplay({ timer, className = '' }: { timer: TimerState; className?: string }) {
+export default function TimerDisplay({ timer, className = '' }: { timer: TimerView; className?: string }) {
   if (timer.durationMs == null) return null;
   const done = timer.remainingMs <= 0;
   const state = done ? 'done' : timer.remainingMs <= TIMER_WARN_MS ? 'warn' : 'ok';

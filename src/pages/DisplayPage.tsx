@@ -2,15 +2,15 @@ import { QRCodeSVG } from 'qrcode.react';
 import Logo from '../components/Logo';
 import TimerDisplay from '../components/TimerDisplay';
 import { useTimer } from '../lib/timer';
-import { useLiveVoting } from '../lib/useLiveVoting';
+import { useLive } from '../lib/live';
 
 /** Big-screen projector view. Everything updates live via AppSync subscriptions. */
 export default function DisplayPage() {
-  const { session, sessionLoaded, stats } = useLiveVoting();
-  const timer = useTimer(session);
+  const { session, loaded, stats, clockOffset } = useLive('display');
+  const timer = useTimer(session, clockOffset);
   const joinUrl = `${window.location.origin}${window.location.pathname}#/`;
 
-  if (!sessionLoaded) {
+  if (!loaded) {
     return (
       <div className="center-screen">
         <p className="muted">Connecting…</p>

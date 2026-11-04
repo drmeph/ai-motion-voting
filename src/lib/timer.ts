@@ -1,39 +1,32 @@
 import { useEffect, useState } from 'react';
-import type { Session } from './client';
+import type { SessionState } from './live';
 
-export interface TimerState {
+export interface TimerView {
   /** Configured length of the current timer, null if never started. */
   durationMs: number | null;
   remainingMs: number;
   running: boolean;
 }
 
-/** Pure read of the timer fields on the session, evaluated at `now`. */
-export function readTimer(session: Session | null, now: number): TimerState {
-  const durationMs = session?.timerDurationMs ?? null;
-  const running = Boolean(session?.timerRunning);
-  let remainingMs: number;
-  if (running && session?.timerEndsAt != null) {
-    remainingMs = session.timerEndsAt - now;
-  } else {
-    remainingMs = session?.timerRemainingMs ?? durationMs ?? 0;
-  }
-  return { durationMs, remainingMs: Math.max(0, remainingMs), running };
-}
-
-/** Live timer state; re-renders a few times a second while the timer runs. */
-export function useTimer(session: Session | null): TimerState {
+/**
+ * Live countdown from the session's timer. `clockOffset` converts local time
+ * to server time, so screens agree even if a device's clock is off.
+ */
+export function useTimer(session: SessionState | null, clockOffset: number): TimerView {
+  const t = session?.timer;
+  const running = Boolean(t?.running);
   const [now, setNow] = useState(() => Date.now());
-  const running = Boolean(session?.timerRunning);
 
   useEffect(() => {
     setNow(Date.now());
     if (!running) return;
     const id = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(id);
-  }, [running, session?.timerEndsAt]);
+  }, [running, t?.endsAt]);
 
-  return readTimer(session, now);
+  if (!t) return { durationMs: null, remainingMs: 0, running: false };
+  const remaining = running && t.endsAt != null ? t.endsAt - (now + clockOffset) : t.remainingMs;
+  return { durationMs: t.durationMs, remainingMs: Math.max(0, remaining), running };
 }
 
 export function formatTimer(ms: number): string {
@@ -43,24 +36,3 @@ export function formatTimer(ms: number): string {
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
-
-/** Session field patches for each timer action (written by the admin). */
-export const timerPatch = {
-  start(durationMs: number, now = Date.now()) {
-    return {
-      timerDurationMs: durationMs,
-      timerRemainingMs: durationMs,
-      timerEndsAt: now + durationMs,
-      timerRunning: true,
-    };
-  },
-  pause(t: TimerState) {
-    return { timerRemainingMs: t.remainingMs, timerEndsAt: null, timerRunning: false };
-  },
-  resume(t: TimerState, now = Date.now()) {
-    return { timerRemainingMs: t.remainingMs, timerEndsAt: now + t.remainingMs, timerRunning: true };
-  },
-  reset(t: TimerState) {
-    return { timerRemainingMs: t.durationMs, timerEndsAt: null, timerRunning: false };
-  },
-};

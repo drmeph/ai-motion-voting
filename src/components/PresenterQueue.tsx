@@ -1,19 +1,17 @@
 import { useRef, useState } from 'react';
-import { getClient, type Presenter, type Session } from '../lib/client';
 import { parsePresenterCsv } from '../lib/csv';
-import { saveOrder, usePresenters } from '../lib/usePresenters';
+import { call, type Presenter, type SessionState } from '../lib/live';
 
 interface Props {
-  session: Session;
-  onStage: (p: Presenter) => Promise<void>;
+  session: SessionState;
+  presenters: Presenter[];
 }
 
 /**
  * Admin card: import presenters from CSV, reorder them (drag or arrows),
  * put the next / a random / a specific presenter on stage.
  */
-export default function PresenterQueue({ session, onStage }: Props) {
-  const { presenters, loaded } = usePresenters();
+export default function PresenterQueue({ session, presenters }: Props) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -47,18 +45,7 @@ export default function PresenterQueue({ session, onStage }: Props) {
       return;
     }
     await run('Import', async () => {
-      const client = getClient();
-      await Promise.all(presenters.map((p) => client.models.Presenter.delete({ id: p.id })));
-      await Promise.all(
-        rows.map((r, i) =>
-          client.models.Presenter.create({
-            name: r.name,
-            projectName: r.projectName || null,
-            extra: r.extra || null,
-            position: i,
-          }),
-        ),
-      );
+      await call('importPresenters', { rows });
       return `Imported ${rows.length} presenters.`;
     });
   }
@@ -68,7 +55,7 @@ export default function PresenterQueue({ session, onStage }: Props) {
     const next = [...presenters];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    void run('Reorder', () => saveOrder(next));
+    void run('Reorder', () => call('reorderPresenters', { ids: next.map((p) => p.id) }));
   }
 
   function shuffle() {
@@ -80,7 +67,7 @@ export default function PresenterQueue({ session, onStage }: Props) {
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
     void run('Shuffle', async () => {
-      await saveOrder([...done, ...rest]);
+      await call('reorderPresenters', { ids: [...done, ...rest].map((p) => p.id) });
       return 'Remaining order shuffled.';
     });
   }
@@ -89,36 +76,35 @@ export default function PresenterQueue({ session, onStage }: Props) {
     if (remaining.length === 0) return;
     const p = remaining[Math.floor(Math.random() * remaining.length)];
     void run('Random pick', async () => {
-      await onStage(p);
+      await call('putOnStage', { id: p.id });
       return `🎲 Random pick: ${p.name} is on stage.`;
     });
   }
 
   function stage(p: Presenter) {
     void run('Put on stage', async () => {
-      await onStage(p);
+      await call('putOnStage', { id: p.id });
       return `${p.name} is on stage.`;
     });
   }
 
   function togglePresented(p: Presenter) {
     void run('Update', async () => {
-      await getClient().models.Presenter.update({ id: p.id, presentedAt: p.presentedAt == null ? Date.now() : null });
+      await call('setPresented', { id: p.id, presented: p.presentedAt == null });
     });
   }
 
   function remove(p: Presenter) {
     if (!window.confirm(`Remove ${p.name} from the list?`)) return;
     void run('Remove', async () => {
-      await getClient().models.Presenter.delete({ id: p.id });
+      await call('removePresenter', { id: p.id });
     });
   }
 
   function clearAll() {
     if (!window.confirm(`Remove all ${presenters.length} presenters?`)) return;
     void run('Clear', async () => {
-      const client = getClient();
-      await Promise.all(presenters.map((p) => client.models.Presenter.delete({ id: p.id })));
+      await call('clearPresenters');
       return 'List cleared.';
     });
   }
@@ -165,9 +151,7 @@ export default function PresenterQueue({ session, onStage }: Props) {
       </div>
       {notice && <p className="muted">{notice}</p>}
 
-      {!loaded ? (
-        <p className="muted">Loading…</p>
-      ) : presenters.length === 0 ? (
+      {presenters.length === 0 ? (
         <p className="muted small">
           Upload a CSV with one presenter per row: <code>name, project, …</code> (a header row is
           optional). The row order becomes the running order.
