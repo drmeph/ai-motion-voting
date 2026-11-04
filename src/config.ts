@@ -2,9 +2,8 @@
  * Event branding/config. Change these values here; nothing else needs editing.
  */
 
-/** Link shown on the mobile voting page. TODO: confirm the exact URL. */
-export const AI_MOTION_PAGE_URL =
-  import.meta.env.VITE_AI_MOTION_PAGE_URL ?? 'https://leadbounty.com/ai-motion';
+/** Link shown on the mobile voting page. */
+export const AI_MOTION_PAGE_URL = 'https://leadbounty.io/ai-motion';
 
 /**
  * Logo file served from /public. Replace public/ai-motion-logo.svg with the

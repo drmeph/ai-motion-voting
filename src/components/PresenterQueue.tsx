@@ -38,7 +38,7 @@ export default function PresenterQueue({ session, presenters }: Props) {
   async function importFile(file: File) {
     const rows = parsePresenterCsv(await file.text());
     if (rows.length === 0) {
-      setNotice('No presenters found in that file. Expected columns: name, project, (third column).');
+      setNotice('No presenters found in that file. Expected columns: name, project.');
       return;
     }
     if (presenters.length > 0 && !window.confirm(`Replace the current list of ${presenters.length} with ${rows.length} presenters from ${file.name}?`)) {
@@ -189,7 +189,7 @@ export default function PresenterQueue({ session, presenters }: Props) {
                   {onStage && <span className="badge badge-live">On stage</span>}
                   {done && <span className="badge">Done</span>}
                   <div className="muted small">
-                    {[p.projectName, p.extra].filter(Boolean).join(' · ') || '—'}
+                    {p.projectName || '—'}
                   </div>
                 </div>
                 <div className="presenter-actions">
