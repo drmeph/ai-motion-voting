@@ -345,23 +345,29 @@ export class EventRoom extends DurableObject<Env> {
     return Math.max(att.connectedAt, pinged);
   }
 
+  /**
+   * The room for the current presenter = devices connected right now plus
+   * every device that voted this round. A vote keeps counting after the
+   * phone sleeps or disconnects; someone connected who hasn't voted counts
+   * against the presenter (the ≥ 50 %-of-the-room rule).
+   */
   private computeStats(): VoteStats {
     const now = Date.now();
-    const active = new Set<string>();
+    const room = new Set<string>();
     for (const ws of this.ctx.getWebSockets('audience')) {
       if (ws.readyState !== WebSocket.OPEN) continue;
       const att = ws.deserializeAttachment() as Attachment;
-      if (att.pid && now - this.lastSeen(ws) < ACTIVE_WINDOW_MS) active.add(att.pid);
+      if (att.pid && now - this.lastSeen(ws) < ACTIVE_WINDOW_MS) room.add(att.pid);
     }
     let upCount = 0;
     let downCount = 0;
-    for (const pid of active) {
-      const v = this.votes.get(pid);
-      if (v?.round !== this.session.round) continue;
+    for (const [pid, v] of this.votes) {
+      if (v.round !== this.session.round) continue;
+      room.add(pid);
       if (v.vote === 'up') upCount++;
       else downCount++;
     }
-    const activeCount = active.size;
+    const activeCount = room.size;
     const upPercent = activeCount === 0 ? null : Math.round((upCount / activeCount) * 100);
     return {
       activeCount,

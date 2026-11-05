@@ -13,13 +13,16 @@ export default function VotePage() {
   const { session, loaded, stats, myVote, connected, clockOffset } = useLive('audience');
   const timer = useTimer(session, clockOffset);
   const [pending, setPending] = useState<VoteValue | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
 
   async function castVote(vote: VoteValue) {
     setPending(vote);
+    setVoteError(null);
     try {
       await call('vote', { vote });
     } catch (err) {
       console.error('Vote failed', err);
+      setVoteError("Your vote didn't go through — tap again.");
     } finally {
       setPending(null);
     }
@@ -87,9 +90,11 @@ export default function VotePage() {
           </button>
         </div>
 
-        <p className="muted vote-hint">
-          {myVote
-            ? `Your vote: ${myVote === 'up' ? '👍 Continue' : '👎 Stop'} — tap the other button to change it.`
+        <p className={`vote-hint ${voteError ? 'bad-text' : 'muted'}`}>
+          {voteError
+            ? voteError
+            : myVote
+            ? `Your vote: ${myVote === 'up' ? '👍 Continue' : '👎 Stop'}. It counts even if you lock your phone — tap the other button to change it.`
             : hasPitcher
               ? 'Tap a button to vote. You can change your vote any time.'
               : 'Voting opens when a pitcher is on stage.'}

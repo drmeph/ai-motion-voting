@@ -133,7 +133,7 @@ export default function AdminPage() {
           <div className="admin-stats">
             <div className="stat">
               <span className="stat-value">{stats.activeCount}</span>
-              <span className="stat-label">connected</span>
+              <span className="stat-label">in the room</span>
             </div>
             <div className="stat">
               <span className={`stat-value ${stats.passing ? 'good-text' : 'bad-text'}`}>
@@ -158,8 +158,9 @@ export default function AdminPage() {
             <div className="progress-threshold" />
           </div>
           <p className="muted small">
-            ≥ 50% of connected people must vote 👍 for the pitcher to continue. Not voting counts
-            against the pitcher.
+            ≥ 50% of the room must vote 👍 for the pitcher to continue. The room = phones open now plus
+            everyone who already voted for this pitcher (a vote keeps counting if the phone sleeps).
+            Not voting counts against the pitcher.
           </p>
         </section>
 

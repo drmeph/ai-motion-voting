@@ -32,6 +32,10 @@ export interface LiveState {
 }
 
 const PARTICIPANT_KEY = 'pitch-vote-participant-id';
+/** After the page becomes visible again, how long to wait for a pong. */
+const WAKE_CHECK_MS = 2_500;
+/** Give up on a request with no answer after this long. */
+const REQUEST_TIMEOUT_MS = 8_000;
 const ADMIN_PASSWORD_KEY = 'pitch-vote-admin-password';
 
 function storage(op: 'get'): string | null;
@@ -90,6 +94,8 @@ class LiveConnection {
   private reconnectTimer: number | null = null;
   private pingTimer: number | null = null;
   private refs = 0;
+  /** Last time anything arrived on the socket. */
+  private lastHeard = 0;
   /** Best (largest) clock-offset sample on this connection. */
   private bestOffset = -Infinity;
 
@@ -128,13 +134,28 @@ class LiveConnection {
   }
 
   private onVisible = () => {
-    // Phones kill sockets in the background; reconnect as soon as we're back.
-    if (document.visibilityState === 'visible' && this.role && this.ws?.readyState !== WebSocket.OPEN) {
-      this.retry = 0;
-      this.close();
-      this.connect();
+    if (document.visibilityState !== 'visible' || !this.role) return;
+    const ws = this.ws;
+    if (ws?.readyState !== WebSocket.OPEN) {
+      // Phones kill sockets in the background; reconnect as soon as we're back.
+      this.reconnectNow();
+      return;
     }
+    // After sleep a socket can still claim to be open while it is dead.
+    // Ping it and reconnect if nothing comes back quickly.
+    const sentAt = Date.now();
+    ws.send('ping');
+    window.setTimeout(() => {
+      if (this.ws === ws && this.lastHeard < sentAt) this.reconnectNow();
+    }, WAKE_CHECK_MS);
   };
+
+  private reconnectNow() {
+    this.retry = 0;
+    this.close();
+    this.set({ connected: false, authed: false });
+    this.connect();
+  }
 
   private connect() {
     if (!this.role) return;
@@ -160,6 +181,7 @@ class LiveConnection {
       }
     };
     ws.onmessage = (ev) => {
+      this.lastHeard = Date.now();
       if (ev.data === 'pong') return;
       const msg = JSON.parse(ev.data as string) as ServerMessage;
       if (msg.type === 'ack') {
@@ -243,7 +265,17 @@ class LiveConnection {
     const id = this.nextId++;
     const req: ClientRequest<K> = { id, op, args: (args ?? {}) as Ops[K] };
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      // A request on a dead socket would hang forever: give up and reconnect.
+      const timer = window.setTimeout(() => {
+        if (!this.pending.has(id)) return;
+        this.pending.delete(id);
+        reject(new Error('Timed out'));
+        if (this.ws === ws) this.reconnectNow();
+      }, REQUEST_TIMEOUT_MS);
+      this.pending.set(id, {
+        resolve: () => (window.clearTimeout(timer), resolve()),
+        reject: (e) => (window.clearTimeout(timer), reject(e)),
+      });
       ws.send(JSON.stringify(req));
     });
   }
