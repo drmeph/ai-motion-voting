@@ -63,7 +63,7 @@ export default function DisplayPage() {
         <div className="display-stats">
           <div className="stat">
             <span className="stat-value">{stats.activeCount}</span>
-            <span className="stat-label">connected</span>
+            <span className="stat-label">in the room</span>
           </div>
           <div className="stat">
             <span className="stat-value good-text">{stats.upCount}</span>

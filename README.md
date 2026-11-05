@@ -52,14 +52,20 @@ browser ──HTTP──▶ Worker ──▶ static files from dist/
   updates the count when that happens. Each device has a UUID in
   `localStorage`, so one device = one vote, even across reloads or tabs.
 - **Voting.** A vote is stored with the round it was cast in. Only votes for
-  the current round count. Phones reconnect automatically (and immediately
-  when brought back to the foreground).
+  the current round count, and **a vote keeps counting for the whole round
+  even if the phone sleeps, locks or closes the page**. Phones reconnect
+  automatically, and when brought back to the foreground they check the
+  connection and reconnect if it died while asleep. A vote that gets no answer
+  within 8 s tells the user to tap again.
 - **Reset votes.** The admin bumps `round` — everyone's vote clears instantly.
 - **Timer.** The server stores when the timer ends, in its own clock, and sends
   its time with every update, so all screens show the same countdown even if a
   device's clock is off.
-- **The math.** `percentage = 👍 votes from connected devices / connected devices`.
-  Not voting counts against the pitcher, per the ≥ 50 %-of-the-room rule.
+- **The math.** `percentage = 👍 votes / people in the room`, where *the room*
+  = phones connected right now **plus** every phone that voted for this
+  pitcher (connected or not). Not voting while connected counts against the
+  pitcher, per the ≥ 50 %-of-the-room rule; a phone that never voted and
+  goes to sleep simply drops out of the room.
 - **Code layout.** `worker/` = Worker + Durable Object, `src/` = React app,
   `shared/protocol.ts` = the message types both sides use.
 
@@ -185,8 +191,9 @@ To reuse the app for another event without redeploying, use **Clear list** and
   admin accounts.
 - A single Durable Object handles thousands of simultaneous WebSockets, far
   more than a room of people.
-- Presence is ping-based (20 s ping / 60 s window): someone whose phone loses
-  signal drops out of the count within about a minute; someone who closes the
-  tab drops out immediately.
+- Presence is ping-based (20 s ping / 60 s window). It only matters for people
+  who haven't voted: a non-voter whose phone loses signal drops out of the
+  room within about a minute (immediately if they close the tab). Voters stay
+  counted for the round no matter what.
 - Cost: well within the Workers free plan for an event (requests, Durable
   Object usage and storage are all tiny; idle sockets hibernate).
